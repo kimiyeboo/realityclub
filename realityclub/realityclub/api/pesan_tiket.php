@@ -1,7 +1,8 @@
 <?php
-// Menyimpan pesanan tiket konser + membuat kode unik untuk setiap lembar tiket
+// Membuat pesanan tiket (status: menunggu pembayaran).
+// Kode tiket baru diterbitkan SETELAH pembayaran lunas (lihat includes/payment.php -> mark_paid).
 define('API_MODE', true);
-require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/payment.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_out(['ok' => false, 'message' => 'Metode tidak diizinkan.'], 405);
@@ -36,42 +37,39 @@ if (!$tour) {
 if ($tour['status'] === 'soldout') {
     json_out(['ok' => false, 'message' => 'Maaf, tiket show ini sudah habis. Silakan daftar waitlist.'], 409);
 }
+if ($tour['ticket_price'] === null || (int)$tour['ticket_price'] <= 0) {
+    json_out(['ok' => false, 'message' => 'Harga tiket show ini belum ditetapkan. Silakan coba lagi nanti.'], 409);
+}
 
-$total = $tour['ticket_price'] !== null ? (int)$tour['ticket_price'] * $qty : null;
+$price = (int)$tour['ticket_price'];
+$total = $price * $qty;
+$token = bin2hex(random_bytes(16));
 
 try {
-    $pdo->beginTransaction();
-    $pdo->prepare('INSERT INTO ticket_orders (tour_id, buyer_name, email, phone, quantity, total_price) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([$tourId, $name, $email, $phone, $qty, $total]);
+    $pdo->prepare('INSERT INTO ticket_orders (tour_id, buyer_name, email, phone, quantity, total_price, public_token) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$tourId, $name, $email, $phone, $qty, $total, $token]);
     $orderId = (int)$pdo->lastInsertId();
-
-    $ins   = $pdo->prepare('INSERT INTO tickets (order_id, ticket_code) VALUES (?, ?)');
-    $codes = [];
-    for ($k = 0; $k < $qty; $k++) {
-        for ($try = 0; $try < 5; $try++) {
-            $code = strtoupper(bin2hex(random_bytes(6))); // 12 karakter, kode unik
-            try {
-                $ins->execute([$orderId, $code]);
-                $codes[] = implode('-', str_split($code, 4));
-                break;
-            } catch (PDOException $ex) {
-                if ($ex->getCode() !== '23000' || $try === 4) {
-                    throw $ex; // bukan bentrok kode, atau sudah 5x gagal
-                }
-            }
-        }
-    }
-    $pdo->commit();
 } catch (Throwable $ex) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
     error_log('pesan_tiket gagal: ' . $ex->getMessage());
     json_out(['ok' => false, 'message' => 'Pesanan gagal diproses. Silakan coba lagi.'], 500);
 }
 
 json_out([
     'ok'      => true,
-    'message' => 'Pesanan #' . $orderId . ' tercatat (menunggu pembayaran). Simpan kode tiketmu:',
-    'details' => $codes,
+    'message' => 'Pesanan #' . $orderId . ' dibuat. Silakan pilih metode pembayaran.',
+    'order'   => [
+        'id'         => $orderId,
+        'token'      => $token,
+        'quantity'   => $qty,
+        'unit_price' => $price,
+        'total'      => $total,
+        'tour'       => $tour['city'] . ' — ' . $tour['venue'] . ', ' . date('j M Y', strtotime($tour['show_date'])),
+        'buyer'      => $name,
+    ],
+    'config'  => [
+        'banks'      => array_keys(VA_BANKS),
+        'transfer'   => ['bank' => TRANSFER_ACCOUNT['bank']],
+        'simulation' => PAYMENT_SIMULATION,
+        'ttl'        => PAYMENT_TTL,
+    ],
 ]);

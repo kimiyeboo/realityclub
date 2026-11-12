@@ -8,6 +8,66 @@
 <meta name="description" content="Diskografi lengkap Reality Club: album, lagu, dan tautan streaming.">
 <link rel="stylesheet" href="css/style.css?v=<?= filemtime(__DIR__ . '/css/style.css') ?>">
 <link rel="stylesheet" href="css/pages.css?v=<?= filemtime(__DIR__ . '/css/pages.css') ?>">
+<style>
+/* CSS album & daftar lagu (ditanam di sini supaya selalu terpakai) */
+/* ===== Album klik -> popup daftar lagu ===== */
+.album-clickable{cursor:pointer;outline:none;}
+.album-clickable:focus-visible .album-art{box-shadow:0 0 0 2px var(--cyan);}
+.album-clickable:hover .album-meta h3,
+.album-clickable:focus-visible .album-meta h3{color:var(--cyan);}
+.album-meta h3{transition:color .3s ease;}
+.album-art-hint{
+  position:absolute;left:50%;bottom:.9rem;z-index:2;
+  display:inline-flex;align-items:center;gap:.45rem;
+  padding:.5rem .9rem;border-radius:99px;
+  background:rgba(6,11,26,.78);backdrop-filter:blur(6px);
+  border:1px solid var(--line);color:var(--paper);
+  font-family:var(--f-mono);font-size:.7rem;letter-spacing:.06em;white-space:nowrap;
+  transform:translate(-50%,10px);opacity:0;
+  transition:opacity .35s var(--ease), transform .35s var(--ease);
+}
+.album-clickable:hover .album-art-hint,
+.album-clickable:focus-visible .album-art-hint{opacity:1;transform:translate(-50%,0);}
+@media (hover:none){.album-art-hint{opacity:1;transform:translate(-50%,0);}}
+
+/* Panel daftar lagu (terbuka di bawah rak album) */
+.album-clickable.active .album-art{box-shadow:0 0 0 2px var(--cyan);transform:translateY(-8px);}
+.album-clickable.active .album-meta h3{color:var(--cyan);}
+.album-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .55s var(--ease);}
+.album-panel.open{grid-template-rows:1fr;}
+.album-panel-inner{overflow:hidden;min-height:0;}
+.album-panel-body{
+  position:relative;margin-top:var(--s-2);
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:var(--s-4);
+  background:linear-gradient(180deg,var(--navy-soft),var(--navy));
+  border:1px solid var(--line);border-radius:var(--radius);
+  opacity:0;transform:translateY(-10px);
+  transition:opacity .45s var(--ease) .1s, transform .45s var(--ease) .1s;
+}
+.album-panel.open .album-panel-body{opacity:1;transform:none;}
+.album-panel-close{position:absolute;top:.9rem;right:1.1rem;background:none;border:none;color:var(--silver);font-size:1.4rem;cursor:pointer;transition:color .3s ease, transform .3s ease;}
+.album-panel-close:hover{color:var(--cyan);transform:rotate(90deg);}
+
+/* UKURAN COVER DI PANEL: ubah 260px di bawah ini kalau mau lebih kecil / besar */
+.album-panel-info{display:flex;flex-direction:column;align-items:center;width:100%;max-width:560px;}
+.album-panel-info .album-art{width:260px;height:260px;flex:0 0 auto;box-shadow:0 20px 40px -18px rgba(0,0,0,.7);}
+
+.album-panel-info .eyebrow{margin-top:1.2rem;}
+.album-panel-info h3{font-size:1.5rem;line-height:1.2;margin:.8rem 0 0;}
+.album-modal-count{font-family:var(--f-mono);font-size:.75rem;color:var(--silver-dim);margin:.6rem 0 0;}
+.album-modal-desc{color:var(--silver);font-size:.92rem;line-height:1.6;margin:var(--s-2) 0 0;}
+.album-panel .stream-row{margin-top:var(--s-3);gap:.6rem;justify-content:center;}
+.album-panel .stream-btn{padding:.6rem 1rem;font-size:.8rem;}
+.album-panel-tracks{width:100%;max-width:640px;margin-top:var(--s-4);border-top:1px solid var(--line);text-align:left;}
+.track-row.compact{padding:.7rem 0;}
+.track-row.compact .title{font-size:.95rem;}
+.track-row.compact .num{flex-shrink:0;}
+@media (max-width:760px){
+  .album-panel-body{padding:var(--s-3);}
+  .album-panel-info .album-art{width:200px;height:200px;}
+}
+</style>
 </head>
 <body>
 
@@ -308,5 +368,40 @@ if ($bts):
 </button>
 
 <script src="js/main.js?v=<?= filemtime(__DIR__ . '/js/main.js') ?>"></script>
+<script>
+(function () {
+  /* album: klik cover -> daftar lagu terbuka di bawahnya ---------- */
+  const albumCards = document.querySelectorAll('.album-clickable');
+  function closeAlbumPanels(except) {
+    document.querySelectorAll('.album-panel.open').forEach(p => {
+      if (p !== except) { p.classList.remove('open'); p.setAttribute('aria-hidden', 'true'); }
+    });
+    albumCards.forEach(c => {
+      const isActive = except && c.getAttribute('data-album-panel') === '#' + except.id;
+      c.classList.toggle('active', !!isActive);
+      c.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+    });
+  }
+  albumCards.forEach(card => {
+    const toggle = () => {
+      const panel = document.querySelector(card.getAttribute('data-album-panel'));
+      if (!panel) return;
+      if (panel.classList.contains('open')) { closeAlbumPanels(null); return; }
+      closeAlbumPanels(panel);
+      panel.classList.add('open');
+      panel.setAttribute('aria-hidden', 'false');
+      setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 250);
+    };
+    card.addEventListener('click', toggle);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+  document.querySelectorAll('[data-panel-close]').forEach(btn => {
+    btn.addEventListener('click', () => closeAlbumPanels(null));
+  });
+
+})();
+</script>
 </body>
 </html>

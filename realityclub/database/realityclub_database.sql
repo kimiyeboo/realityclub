@@ -135,7 +135,8 @@ CREATE TABLE ticket_orders (
   phone VARCHAR(20) NOT NULL COMMENT 'Nomor HP pembeli',
   quantity TINYINT UNSIGNED NOT NULL COMMENT 'Jumlah tiket (1-4)',
   total_price INT UNSIGNED COMMENT 'Total bayar (Rp)',
-  status ENUM('pending','paid','cancelled') NOT NULL DEFAULT 'pending' COMMENT 'Status pembayaran',
+  public_token CHAR(32) COMMENT 'Token acak untuk cek status pesanan',
+  status ENUM('pending','paid','cancelled','expired') NOT NULL DEFAULT 'pending' COMMENT 'Status pembayaran',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu pemesanan',
   CONSTRAINT fk_ticket_orders_tour_id FOREIGN KEY (tour_id) REFERENCES tours(id) ON DELETE RESTRICT,
   CONSTRAINT chk_qty CHECK (quantity BETWEEN 1 AND 4)
@@ -150,6 +151,35 @@ CREATE TABLE tickets (
   issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu tiket diterbitkan',
   CONSTRAINT fk_tickets_order_id FOREIGN KEY (order_id) REFERENCES ticket_orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB COMMENT='Tiket individual dengan kode unik / barcode';
+
+-- Pembayaran tiket (halaman: Tour)
+CREATE TABLE payments (
+  id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT 'ID pembayaran',
+  order_id INT UNSIGNED NOT NULL COMMENT 'Pesanan tiket yang dibayar',
+  method ENUM('va','qris','transfer') NOT NULL COMMENT 'Metode: Virtual Account / QRIS / Transfer manual',
+  provider VARCHAR(20) NULL COMMENT 'Bank (BCA, BNI, BRI, MANDIRI) atau QRIS',
+  pay_code VARCHAR(64) NULL COMMENT 'Nomor VA / nomor rekening tujuan / payload QRIS',
+  unique_code SMALLINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Kode unik (transfer manual), ditambahkan ke total',
+  amount INT UNSIGNED NOT NULL COMMENT 'Nominal yang harus dibayar (Rp)',
+  status ENUM('pending','paid','expired','cancelled') NOT NULL DEFAULT 'pending' COMMENT 'Status pembayaran',
+  expires_at DATETIME NOT NULL COMMENT 'Batas waktu pembayaran',
+  paid_at DATETIME NULL COMMENT 'Waktu pembayaran diterima',
+  reference VARCHAR(100) NULL COMMENT 'Referensi dari bank / payment gateway',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu dibuat',
+  CONSTRAINT fk_payments_order_id FOREIGN KEY (order_id) REFERENCES ticket_orders(id) ON DELETE CASCADE,
+  KEY idx_payments_status (status, expires_at)
+) ENGINE=InnoDB COMMENT='Pembayaran pesanan tiket';
+
+-- Riwayat kejadian pembayaran (dibuat, notifikasi masuk, lunas, kedaluwarsa)
+CREATE TABLE payment_logs (
+  id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT 'ID log',
+  payment_id INT UNSIGNED NOT NULL COMMENT 'Pembayaran terkait',
+  event VARCHAR(40) NOT NULL COMMENT 'created, paid, expired, cancelled, callback_ignored ...',
+  source VARCHAR(30) NOT NULL COMMENT 'user, callback, admin, simulasi, system',
+  note VARCHAR(255) NULL COMMENT 'Keterangan',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu kejadian',
+  CONSTRAINT fk_payment_logs_payment_id FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Riwayat kejadian pembayaran';
 
 -- Daftar tunggu untuk show sold out (halaman: Tour)
 CREATE TABLE waitlist (
@@ -321,12 +351,12 @@ INSERT INTO social_links (platform, label, url) VALUES
 ('TikTok','TT','https://www.tiktok.com/@realityclubofficial?_r=1&_t=ZS-98BQJG15XKG'),
 ('X','X','https://x.com/reality_club');
 
-INSERT INTO tours (city, venue, show_date, tour_name, status, show_on_home) VALUES
-('Jakarta','Istora Senayan','2026-09-14','Reality Club: Homecoming Show','limited',TRUE),
-('Bandung','Sasana Budaya Ganesha','2026-09-21','Reality Club: Homecoming Show','available',TRUE),
-('Surabaya','Grand City Convex','2026-09-28','Homecoming Show','soldout',FALSE),
-('Singapore','Esplanade Annexe','2026-10-05','Southeast Asia Run','available',TRUE),
-('Kuala Lumpur','KL Live','2026-10-12','Southeast Asia Run','available',FALSE);
+INSERT INTO tours (city, venue, show_date, tour_name, status, ticket_price, show_on_home) VALUES
+('Jakarta','Istora Senayan','2026-09-14','Reality Club: Homecoming Show','limited',350000,TRUE),
+('Bandung','Sasana Budaya Ganesha','2026-09-21','Reality Club: Homecoming Show','available',300000,TRUE),
+('Surabaya','Grand City Convex','2026-09-28','Homecoming Show','soldout',300000,FALSE),
+('Singapore','Esplanade Annexe','2026-10-05','Southeast Asia Run','available',450000,TRUE),
+('Kuala Lumpur','KL Live','2026-10-12','Southeast Asia Run','available',400000,FALSE);
 
 INSERT INTO faqs (question, answer, sort_order) VALUES
 ('Bagaimana cara mengubah tiket yang sudah dibeli?','Hubungi tim kami melalui halaman Contact selambat-lambatnya 3 hari sebelum acara. Perubahan tergantung ketersediaan kursi di venue tujuan.',1),

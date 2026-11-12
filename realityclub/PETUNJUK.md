@@ -25,3 +25,19 @@ Jika password MySQL kamu bukan kosong, ubah `includes/koneksi.php`.
 - tour.php    : tours, faqs, ticket_orders, tickets, waitlist
 - shop.php    : products, orders, order_items
 - contact.php : contact_info, contact_messages
+
+
+## Pembayaran tiket (baru)
+Alur: form Beli Tiket -> pilih metode (Virtual Account BCA/BNI/BRI/Mandiri, QRIS, Transfer Bank) -> menunggu pembayaran
+(hitung mundur + cek status otomatis tiap 4 detik) -> "Pembayaran Selesai" + kode tiket terbit. Semua tercatat di database.
+
+Database lama: jalankan `database/update_pembayaran.sql` SEKALI di phpMyAdmin. Database baru: cukup import `realityclub_database.sql`.
+Tabel: `payments` (pembayaran), `payment_logs` (riwayat), `ticket_orders` (+ kolom public_token, status 'expired'). Harga di `tours.ticket_price` (isi contoh, ubah sesuai harga asli).
+
+File: `includes/payment_config.php` (pengaturan), `includes/payment.php` (fungsi), `api/bayar.php`, `api/status_pembayaran.php`,
+`api/simulasi_bayar.php` (demo), `api/payment_callback.php` (webhook bank/gateway), `admin/pembayaran.php` (konfirmasi transfer manual),
+`js/payment.js`, `css/payment.css`.
+
+Menandai LUNAS: (1) otomatis lewat webhook api/payment_callback.php dari bank/payment gateway, (2) manual lewat admin/pembayaran.php,
+(3) tombol "Simulasikan pembayaran" untuk demo (matikan dengan PAYMENT_SIMULATION=false sebelum website online).
+Ganti CALLBACK_SECRET, ADMIN_PASSWORD, rekening TRANSFER_ACCOUNT, dan kode VA_BANKS di payment_config.php.

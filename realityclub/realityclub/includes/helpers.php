@@ -55,7 +55,7 @@ function render_tour_cards(array $tours, bool $home = false): void
             echo '<a class="btn ' . $btnCls . ' tour-buy" href="tour.php">' . $btnText . '</a>';
         } else {
             $modal = $soldout ? '#waitlist-modal' : '#ticket-modal';
-            echo '<a class="btn ' . $btnCls . ' tour-buy" data-modal-open="' . $modal . '" data-tour="' . e($full) . '" data-tour-id="' . (int)$t['id'] . '">' . $btnText . '</a>';
+            echo '<a class="btn ' . $btnCls . ' tour-buy" data-modal-open="' . $modal . '" data-tour="' . e($full) . '" data-tour-id="' . (int)$t['id'] . '" data-price="' . (int)($t['ticket_price'] ?? 0) . '">' . $btnText . '</a>';
         }
         echo "</div>\n";
     }
