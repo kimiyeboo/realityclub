@@ -11,16 +11,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_out(['ok' => false, 'message' => 'Metode tidak diizinkan.'], 405);
 }
 
+$type    = norm_type($_POST['type'] ?? 'ticket');
 $orderId = (int)($_POST['order_id'] ?? 0);
 $token   = (string)($_POST['token'] ?? '');
 
 $pdo = db();
 expire_stale($pdo);
-$order = find_order($pdo, $orderId, $token);
+$order = find_order($pdo, $orderId, $token, $type);
 if (!$order) {
     json_out(['ok' => false, 'message' => 'Pesanan tidak ditemukan.'], 404);
 }
-$pay = latest_payment($pdo, $orderId);
+$pay = latest_payment($pdo, $orderId, $type);
 if (!$pay) {
     json_out(['ok' => false, 'message' => 'Belum ada pembayaran untuk pesanan ini.'], 409);
 }

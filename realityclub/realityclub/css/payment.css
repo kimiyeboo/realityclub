@@ -73,3 +73,4 @@
 .pay-resume:hover{background:rgba(143,246,228,.1);}
 @media (max-width:520px){.pay-actions{flex-direction:column;}.pay-banks{grid-template-columns:1fr 1fr;}}
 @media (prefers-reduced-motion:reduce){.pay-spinner,.pay-check,.pay-toast{animation:none;}}
+.pay-item{color:var(--paper);font-size:.9rem;padding:.55rem .8rem;border:1px solid rgba(255,255,255,.12);border-radius:var(--radius-sm);text-align:left;}

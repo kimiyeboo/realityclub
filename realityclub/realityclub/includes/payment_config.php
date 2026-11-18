@@ -29,3 +29,7 @@ const VA_BANKS = [
 
 // Batas waktu bayar (menit) per metode
 const PAYMENT_TTL = ['va' => 1440, 'qris' => 30, 'transfer' => 1440];
+
+// Pesanan toko yang tidak pernah dibayar (belum memilih metode) dibatalkan setelah sekian menit,
+// dan stok barangnya dikembalikan.
+const ORDER_HOLD_MINUTES = 1440;

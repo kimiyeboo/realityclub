@@ -1,7 +1,7 @@
 <?php
 // Menyimpan pesanan merch / album (orders + order_items). Harga selalu diambil dari database.
 define('API_MODE', true);
-require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/payment.php';
 
 class StokException extends RuntimeException {}
 
@@ -67,8 +67,9 @@ if ($needAddress && mb_strlen($address) < 10) {
 
 try {
     $pdo->beginTransaction();
-    $pdo->prepare('INSERT INTO orders (customer_name, email, phone, shipping_address, total_price) VALUES (?, ?, ?, ?, ?)')
-        ->execute([$name, $email, $phone, $needAddress ? $address : null, $total]);
+    $token = bin2hex(random_bytes(16));
+    $pdo->prepare('INSERT INTO orders (customer_name, email, phone, shipping_address, total_price, public_token) VALUES (?, ?, ?, ?, ?, ?)')
+        ->execute([$name, $email, $phone, $needAddress ? $address : null, $total, $token]);
     $orderId = (int)$pdo->lastInsertId();
 
     $item  = $pdo->prepare('INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)');
@@ -95,8 +96,20 @@ try {
     json_out(['ok' => false, 'message' => 'Pesanan gagal diproses. Silakan coba lagi.'], 500);
 }
 
+$totalQty = array_sum($want);
 json_out([
     'ok'      => true,
-    'message' => 'Pesanan #' . $orderId . ' tercatat dengan total ' . rupiah($total) . '. Kami akan menghubungi lewat email / HP untuk pembayaran.',
-    'details' => [],
+    'message' => 'Pesanan ' . order_no('shop', $orderId) . ' dibuat. Silakan pilih metode pembayaran.',
+    'order'   => [
+        'id'         => $orderId,
+        'token'      => $token,
+        'type'       => 'shop',
+        'title'      => 'Pesanan ' . order_no('shop', $orderId),
+        'line'       => $totalQty . ' barang',
+        'quantity'   => $totalQty,
+        'unit_price' => intdiv($total, max(1, $totalQty)),
+        'total'      => $total,
+        'buyer'      => $name,
+    ],
+    'config'  => payment_config_public(),
 ]);

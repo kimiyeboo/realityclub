@@ -110,37 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  /* ---------- album: klik cover -> daftar lagu terbuka di bawahnya ---------- */
-  const albumCards = document.querySelectorAll('.album-clickable');
-  function closeAlbumPanels(except) {
-    document.querySelectorAll('.album-panel.open').forEach(p => {
-      if (p !== except) { p.classList.remove('open'); p.setAttribute('aria-hidden', 'true'); }
-    });
-    albumCards.forEach(c => {
-      const isActive = except && c.getAttribute('data-album-panel') === '#' + except.id;
-      c.classList.toggle('active', !!isActive);
-      c.setAttribute('aria-expanded', isActive ? 'true' : 'false');
-    });
-  }
-  albumCards.forEach(card => {
-    const toggle = () => {
-      const panel = document.querySelector(card.getAttribute('data-album-panel'));
-      if (!panel) return;
-      if (panel.classList.contains('open')) { closeAlbumPanels(null); return; }
-      closeAlbumPanels(panel);
-      panel.classList.add('open');
-      panel.setAttribute('aria-hidden', 'false');
-      setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
-    };
-    card.addEventListener('click', toggle);
-    card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    });
-  });
-  document.querySelectorAll('[data-panel-close]').forEach(btn => {
-    btn.addEventListener('click', () => closeAlbumPanels(null));
-  });
-
   document.querySelectorAll('[data-modal-close]').forEach(btn => {
     btn.addEventListener('click', () => {
       const overlay = btn.closest('.modal-overlay');
@@ -266,7 +235,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const checkoutModal = document.querySelector('#checkout-modal');
   const rupiah = n => 'Rp' + Number(n).toLocaleString('id-ID');
   const cartCount = () => Object.values(cart).reduce((sum, it) => sum + it.qty, 0);
-  const refreshCount = () => { if (cartCountEl) cartCountEl.textContent = cartCount(); };
+  // keranjang disimpan sementara di browser agar tidak hilang saat pindah halaman
+  const CART_KEY = 'rc_cart';
+  try { Object.assign(cart, JSON.parse(sessionStorage.getItem(CART_KEY) || '{}')); } catch (e) {}
+  const refreshCount = () => {
+    if (cartCountEl) cartCountEl.textContent = cartCount();
+    try { sessionStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {}
+  };
 
   function renderCart() {
     const list = document.querySelector('#cart-list');
@@ -332,6 +307,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => btn.classList.remove('added'), 1800);
     });
   });
+
+  refreshCount();
 
   if (cartFab && checkoutModal) {
     cartFab.addEventListener('click', () => {

@@ -321,8 +321,8 @@
 .album-panel-inner{overflow:hidden;min-height:0;}
 .album-panel-body{
   position:relative;margin-top:var(--s-2);
-  display:grid;grid-template-columns:280px 1fr;gap:var(--s-4);align-items:start;
-  text-align:left;padding:var(--s-4);
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:var(--s-4);
   background:linear-gradient(180deg,var(--navy-soft),var(--navy));
   border:1px solid var(--line);border-radius:var(--radius);
   opacity:0;transform:translateY(-10px);
@@ -331,21 +331,32 @@
 .album-panel.open .album-panel-body{opacity:1;transform:none;}
 .album-panel-close{position:absolute;top:.9rem;right:1.1rem;background:none;border:none;color:var(--silver);font-size:1.4rem;cursor:pointer;transition:color .3s ease, transform .3s ease;}
 .album-panel-close:hover{color:var(--cyan);transform:rotate(90deg);}
-.album-panel-info .album-art{width:100%;max-width:280px;box-shadow:0 20px 40px -18px rgba(0,0,0,.7);}
-.album-panel-info h3{font-size:1.5rem;line-height:1.2;margin:.5rem 0 0;}
+
+/* UKURAN COVER DI PANEL: ubah 260px di bawah ini kalau mau lebih kecil / besar */
+.album-panel-info{display:flex;flex-direction:column;align-items:center;width:100%;max-width:560px;}
+.album-panel-info .album-art{width:260px;height:260px;flex:0 0 auto;box-shadow:0 20px 40px -18px rgba(0,0,0,.7);}
+
+.album-panel-info .eyebrow{margin-top:1.2rem;}
+.album-panel-info h3{font-size:1.5rem;line-height:1.2;margin:.8rem 0 0;}
 .album-modal-count{font-family:var(--f-mono);font-size:.75rem;color:var(--silver-dim);margin:.6rem 0 0;}
 .album-modal-desc{color:var(--silver);font-size:.92rem;line-height:1.6;margin:var(--s-2) 0 0;}
-.album-panel .stream-row{margin-top:var(--s-3);gap:.6rem;}
+.album-panel .stream-row{margin-top:var(--s-3);gap:.6rem;justify-content:center;}
 .album-panel .stream-btn{padding:.6rem 1rem;font-size:.8rem;}
-.album-panel-tracks{align-self:start;margin-top:0;padding-right:.75rem;max-height:480px;overflow-y:auto;}
-.album-panel-tracks::-webkit-scrollbar{width:6px;}
-.album-panel-tracks::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;}
-.album-panel{scroll-margin-top:90px;}
+.album-panel-tracks{width:100%;max-width:640px;margin-top:var(--s-4);border-top:1px solid var(--line);text-align:left;}
 .track-row.compact{padding:.7rem 0;}
 .track-row.compact .title{font-size:.95rem;}
 .track-row.compact .num{flex-shrink:0;}
-@media (max-width:900px){
-  .album-panel-body{grid-template-columns:1fr;padding:var(--s-3);gap:var(--s-3);}
-  .album-panel-info .album-art{max-width:220px;margin:0 auto;}
-  .album-panel-tracks{max-height:none;padding-right:0;border-top:1px solid var(--line);}
+@media (max-width:760px){
+  .album-panel-body{padding:var(--s-3);}
+  .album-panel-info .album-art{width:200px;height:200px;}
 }
+
+/* ===== Perbaikan katalog Shop ===== */
+.add-btn{background:transparent;cursor:pointer;font-family:inherit;}
+.add-btn:disabled{background:transparent;}
+.product-card{display:flex;flex-direction:column;}
+.product-card .product-info{flex:1;}
+.product-card .add-btn{margin-top:auto;}
+.product-card .product-info{margin-bottom:0.9rem;}
+/* tombol "Lanjutkan pembayaran" naik sedikit agar tidak menimpa tombol keranjang */
+body:has(.cart-fab) .pay-resume{bottom:5.6rem;}

@@ -14,19 +14,77 @@ function log_payment(PDO $pdo, int $paymentId, string $event, string $source, ?s
         ->execute([$paymentId, $event, $source, $note]);
 }
 
+// Nama tabel pesanan menurut jenisnya
+function order_table(string $type): string
+{
+    return $type === 'shop' ? 'orders' : 'ticket_orders';
+}
+
+function norm_type($t): string
+{
+    return $t === 'shop' ? 'shop' : 'ticket';
+}
+
+// Kembalikan stok barang sebuah pesanan toko (hanya produk yang stoknya dibatasi)
+function restore_stock(PDO $pdo, int $orderId): void
+{
+    $pdo->prepare('UPDATE products p JOIN order_items oi ON oi.product_id = p.id
+                      SET p.stock = p.stock + oi.quantity
+                    WHERE oi.order_id = ? AND p.stock IS NOT NULL')->execute([$orderId]);
+}
+
+// Ambil stok lagi (dipakai bila admin melunasi pesanan yang sudah kedaluwarsa). false = stok kurang.
+function take_stock(PDO $pdo, int $orderId): bool
+{
+    $st = $pdo->prepare('SELECT oi.product_id, oi.quantity, p.stock
+                           FROM order_items oi JOIN products p ON p.id = oi.product_id
+                          WHERE oi.order_id = ?');
+    $st->execute([$orderId]);
+    $up = $pdo->prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?');
+    foreach ($st->fetchAll() as $it) {
+        if ($it['stock'] === null) {
+            continue;
+        }
+        $up->execute([$it['quantity'], $it['product_id'], $it['quantity']]);
+        if ($up->rowCount() === 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Tandai pesanan kedaluwarsa (stok toko dikembalikan sekali saja)
+function expire_order(PDO $pdo, string $type, int $orderId): void
+{
+    $up = $pdo->prepare('UPDATE ' . order_table($type) . " SET status = 'expired' WHERE id = ? AND status = 'pending'");
+    $up->execute([$orderId]);
+    if ($up->rowCount() > 0 && $type === 'shop') {
+        restore_stock($pdo, $orderId);
+    }
+}
+
 // Pembayaran yang lewat batas waktu -> expired (dan pesanannya juga)
 function expire_stale(PDO $pdo): void
 {
-    $st = $pdo->prepare("SELECT id, order_id FROM payments WHERE status = 'pending' AND expires_at < ?");
+    $st = $pdo->prepare("SELECT id, order_id, order_type FROM payments WHERE status = 'pending' AND expires_at < ?");
     $st->execute([now_str()]);
     foreach ($st->fetchAll() as $p) {
         $up = $pdo->prepare("UPDATE payments SET status = 'expired' WHERE id = ? AND status = 'pending'");
         $up->execute([$p['id']]);
         if ($up->rowCount() > 0) {
-            $pdo->prepare("UPDATE ticket_orders SET status = 'expired' WHERE id = ? AND status = 'pending'")
-                ->execute([$p['order_id']]);
+            expire_order($pdo, norm_type($p['order_type']), (int)$p['order_id']);
             log_payment($pdo, (int)$p['id'], 'expired', 'system', 'Melewati batas waktu pembayaran');
         }
+    }
+
+    // pesanan toko yang tidak pernah sampai ke pembayaran: lepaskan stoknya
+    $hold = (int)ORDER_HOLD_MINUTES;
+    $old = $pdo->query("SELECT o.id FROM orders o
+                         WHERE o.status = 'pending' AND o.created_at < (NOW() - INTERVAL $hold MINUTE)
+                           AND NOT EXISTS (SELECT 1 FROM payments p
+                                            WHERE p.order_type = 'shop' AND p.order_id = o.id AND p.status = 'pending')");
+    foreach ($old->fetchAll() as $o) {
+        expire_order($pdo, 'shop', (int)$o['id']);
     }
 }
 
@@ -89,7 +147,8 @@ function mark_paid(PDO $pdo, int $paymentId, string $source, ?string $reference 
             return ['ok' => false, 'message' => 'Pembayaran tidak lagi menunggu (status: ' . $pay['status'] . ').'];
         }
 
-        $os = $pdo->prepare('SELECT * FROM ticket_orders WHERE id = ? FOR UPDATE');
+        $type = norm_type($pay['order_type'] ?? 'ticket');
+        $os = $pdo->prepare('SELECT * FROM ' . order_table($type) . ' WHERE id = ? FOR UPDATE');
         $os->execute([$pay['order_id']]);
         $order = $os->fetch();
         if (!$order || ($order['status'] === 'cancelled' && !$force)) {
@@ -97,11 +156,19 @@ function mark_paid(PDO $pdo, int $paymentId, string $source, ?string $reference 
             return ['ok' => false, 'message' => 'Pesanan tidak valid atau sudah dibatalkan.'];
         }
 
+        // pesanan toko yang sudah kedaluwarsa: stok sudah dikembalikan, ambil lagi
+        if ($type === 'shop' && $order['status'] === 'expired' && !take_stock($pdo, (int)$order['id'])) {
+            $pdo->rollBack();
+            return ['ok' => false, 'message' => 'Stok barang sudah habis, pesanan tidak bisa dilunasi.'];
+        }
+
         $pdo->prepare("UPDATE payments SET status = 'paid', paid_at = ?, reference = ? WHERE id = ?")
             ->execute([now_str(), $reference, $paymentId]);
-        $pdo->prepare("UPDATE ticket_orders SET status = 'paid' WHERE id = ?")
+        $pdo->prepare('UPDATE ' . order_table($type) . " SET status = 'paid' WHERE id = ?")
             ->execute([$order['id']]);
-        issue_tickets($pdo, (int)$order['id'], (int)$order['quantity']);
+        if ($type === 'ticket') {
+            issue_tickets($pdo, (int)$order['id'], (int)$order['quantity']);
+        }
         log_payment($pdo, $paymentId, 'paid', $source, $reference);
         $pdo->commit();
         return ['ok' => true, 'message' => 'Pembayaran berhasil dicatat.'];
@@ -114,32 +181,82 @@ function mark_paid(PDO $pdo, int $paymentId, string $source, ?string $reference 
     }
 }
 
-// Ambil pesanan + konser, hanya jika token cocok
-function find_order(PDO $pdo, int $orderId, string $token): ?array
+// Ambil pesanan (tiket: beserta konser), hanya jika token cocok
+function find_order(PDO $pdo, int $orderId, string $token, string $type = 'ticket'): ?array
 {
-    $st = $pdo->prepare('SELECT o.*, t.city, t.venue, t.show_date, t.tour_name
-                           FROM ticket_orders o JOIN tours t ON t.id = o.tour_id WHERE o.id = ?');
+    $type = norm_type($type);
+    if ($type === 'shop') {
+        $st = $pdo->prepare('SELECT * FROM orders WHERE id = ?');
+    } else {
+        $st = $pdo->prepare('SELECT o.*, t.city, t.venue, t.show_date, t.tour_name
+                               FROM ticket_orders o JOIN tours t ON t.id = o.tour_id WHERE o.id = ?');
+    }
     $st->execute([$orderId]);
     $o = $st->fetch();
     if (!$o || empty($o['public_token']) || !hash_equals($o['public_token'], $token)) {
         return null;
     }
+    $o['order_type'] = $type;
     return $o;
 }
 
-function latest_payment(PDO $pdo, int $orderId): ?array
+function latest_payment(PDO $pdo, int $orderId, string $type = 'ticket'): ?array
 {
-    $st = $pdo->prepare('SELECT * FROM payments WHERE order_id = ? ORDER BY id DESC LIMIT 1');
-    $st->execute([$orderId]);
+    $st = $pdo->prepare('SELECT * FROM payments WHERE order_id = ? AND order_type = ? ORDER BY id DESC LIMIT 1');
+    $st->execute([$orderId, norm_type($type)]);
     $p = $st->fetch();
     return $p ?: null;
 }
 
-// Nomor Virtual Account 16 digit: kode bank + nomor pesanan
-function build_va(string $bank, int $orderId): string
+// Nomor Virtual Account 16 digit: kode bank + nomor pesanan.
+// Pesanan toko memakai angka 9 setelah kode bank supaya tidak bentrok dengan pesanan tiket.
+function build_va(string $bank, int $orderId, string $type = 'ticket'): string
 {
     $prefix = VA_BANKS[$bank];
+    if ($type === 'shop') {
+        return $prefix . '9' . str_pad((string)$orderId, 15 - strlen($prefix), '0', STR_PAD_LEFT);
+    }
     return $prefix . str_pad((string)$orderId, 16 - strlen($prefix), '0', STR_PAD_LEFT);
+}
+
+// Nomor pesanan yang tampil ke pembeli
+function order_no(string $type, int $orderId): string
+{
+    return ($type === 'shop' ? 'RS-' : 'RC-') . str_pad((string)$orderId, 6, '0', STR_PAD_LEFT);
+}
+
+// Ringkasan pesanan untuk ditampilkan di jendela pembayaran
+function order_summary(PDO $pdo, array $order, string $type): array
+{
+    if ($type === 'shop') {
+        $st = $pdo->prepare('SELECT p.name, oi.quantity FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ? ORDER BY oi.id');
+        $st->execute([$order['id']]);
+        $items = [];
+        $qty = 0;
+        foreach ($st->fetchAll() as $r) {
+            $items[] = $r['name'] . ' × ' . $r['quantity'];
+            $qty += (int)$r['quantity'];
+        }
+        return ['title' => 'Pesanan ' . order_no('shop', (int)$order['id']), 'line' => $qty . ' barang', 'quantity' => $qty, 'items' => $items];
+    }
+    $qty = (int)$order['quantity'];
+    return [
+        'title'    => $order['city'] . ' — ' . $order['venue'] . ', ' . date('j M Y', strtotime($order['show_date'])),
+        'line'     => $qty . ' tiket × ' . rupiah($qty ? intdiv((int)$order['total_price'], $qty) : 0),
+        'quantity' => $qty,
+        'items'    => [],
+    ];
+}
+
+// Pengaturan pembayaran yang boleh dilihat browser
+function payment_config_public(): array
+{
+    return [
+        'banks'      => array_keys(VA_BANKS),
+        'transfer'   => ['bank' => TRANSFER_ACCOUNT['bank']],
+        'simulation' => PAYMENT_SIMULATION,
+        'ttl'        => PAYMENT_TTL,
+    ];
 }
 
 function crc16_ccitt(string $s): string

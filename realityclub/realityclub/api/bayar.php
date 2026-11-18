@@ -8,6 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_out(['ok' => false, 'message' => 'Metode tidak diizinkan.'], 405);
 }
 
+$type     = norm_type($_POST['type'] ?? 'ticket');
 $orderId  = (int)($_POST['order_id'] ?? 0);
 $token    = (string)($_POST['token'] ?? '');
 $method   = (string)($_POST['method'] ?? '');
@@ -22,7 +23,7 @@ if ($method === 'va' && !isset(VA_BANKS[$provider])) {
 
 $pdo = db();
 expire_stale($pdo);
-$order = find_order($pdo, $orderId, $token);
+$order = find_order($pdo, $orderId, $token, $type);
 if (!$order) {
     json_out(['ok' => false, 'message' => 'Pesanan tidak ditemukan.'], 404);
 }
@@ -39,8 +40,8 @@ try {
     $pdo->beginTransaction();
 
     // batalkan pembayaran lama yang masih menunggu
-    $old = $pdo->prepare("SELECT id FROM payments WHERE order_id = ? AND status = 'pending'");
-    $old->execute([$orderId]);
+    $old = $pdo->prepare("SELECT id FROM payments WHERE order_id = ? AND order_type = ? AND status = 'pending'");
+    $old->execute([$orderId, $type]);
     foreach ($old->fetchAll() as $o) {
         $pdo->prepare("UPDATE payments SET status = 'cancelled' WHERE id = ?")->execute([$o['id']]);
         log_payment($pdo, (int)$o['id'], 'cancelled', 'user', 'Ganti metode pembayaran');
@@ -62,18 +63,18 @@ try {
     }
 
     if ($method === 'va') {
-        $payCode = build_va($provider, $orderId);
+        $payCode = build_va($provider, $orderId, $type);
     } elseif ($method === 'qris') {
         $provider = 'QRIS';
-        $payCode  = build_qris($amount, 'RC' . str_pad((string)$orderId, 8, '0', STR_PAD_LEFT));
+        $payCode  = build_qris($amount, ($type === 'shop' ? 'RS' : 'RC') . str_pad((string)$orderId, 8, '0', STR_PAD_LEFT));
     } else {
         $provider = TRANSFER_ACCOUNT['bank'];
         $payCode  = TRANSFER_ACCOUNT['number'];
     }
 
     $expires = date('Y-m-d H:i:s', time() + PAYMENT_TTL[$method] * 60);
-    $pdo->prepare('INSERT INTO payments (order_id, method, provider, pay_code, unique_code, amount, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$orderId, $method, $provider, $payCode, $unique, $amount, $expires]);
+    $pdo->prepare('INSERT INTO payments (order_type, order_id, method, provider, pay_code, unique_code, amount, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$type, $orderId, $method, $provider, $payCode, $unique, $amount, $expires]);
     $paymentId = (int)$pdo->lastInsertId();
     log_payment($pdo, $paymentId, 'created', 'user', $method . ' ' . $provider);
     $pdo->commit();
@@ -85,5 +86,5 @@ try {
     json_out(['ok' => false, 'message' => 'Gagal membuat pembayaran. Silakan coba lagi.'], 500);
 }
 
-$pay = latest_payment($pdo, $orderId);
+$pay = latest_payment($pdo, $orderId, $type);
 json_out(['ok' => true, 'payment' => payment_public($pay, $order), 'server_time' => time()]);

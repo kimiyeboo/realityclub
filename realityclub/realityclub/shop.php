@@ -1,4 +1,4 @@
-<?php require_once __DIR__ . '/includes/helpers.php'; $pdo = db(); ?>
+<?php require_once __DIR__ . '/includes/payment.php'; $pdo = db(); expire_stale($pdo); ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -8,6 +8,7 @@
 <meta name="description" content="Merchandise resmi Reality Club.">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/pages.css">
+<link rel="stylesheet" href="css/payment.css?v=<?= filemtime(__DIR__ . '/css/payment.css') ?>">
 <style>
   .shop-grid-3{display:grid;grid-template-columns:repeat(3, minmax(220px, 300px));justify-content:center;gap:2rem;max-width:1040px;margin:0 auto;}
   @media (max-width:900px){ .shop-grid-3{grid-template-columns:repeat(2, minmax(220px, 300px));} }
@@ -105,7 +106,7 @@ foreach ($groups as $title => $items):
     <div class="eyebrow">Checkout</div>
     <h3 class="mt-2">Keranjang Belanja</h3>
     <div id="cart-list" class="cart-list"></div>
-    <form id="checkout-form" data-validate="#success-modal" data-endpoint="api/checkout.php" class="mt-4">
+    <form id="checkout-form" data-validate="#payment-modal" data-endpoint="api/checkout.php" class="mt-4">
       <input type="hidden" name="cart" id="cart-json">
       <div class="field">
         <label>Nama Lengkap</label>
@@ -127,20 +128,15 @@ foreach ($groups as $title => $items):
         <textarea name="shipping_address" rows="3" id="shipping-address" placeholder="Alamat lengkap (tidak perlu untuk album digital)"></textarea>
         <span class="field-error">Alamat wajib diisi untuk produk fisik.</span>
       </div>
-      <button type="submit" class="btn btn-primary mt-2" style="width:100%;justify-content:center;">Buat Pesanan</button>
+      <p class="pay-note" style="margin-top:.5rem;">Langkah berikutnya: pilih pembayaran lewat QRIS, Virtual Account (BCA, BNI, BRI, Mandiri), atau transfer bank.</p>
+      <button type="submit" class="btn btn-primary mt-2" style="width:100%;justify-content:center;">Lanjut ke Pembayaran</button>
     </form>
   </div>
 </div>
 
-<div class="modal-overlay" id="success-modal">
-  <div class="modal text-center">
-    <button class="modal-close" data-modal-close aria-label="Tutup">×</button>
-    <div class="eyebrow" style="justify-content:center;">Berhasil</div>
-    <h3 class="mt-2">Terima Kasih</h3>
-    <p class="mt-2" data-fill="result-message" style="color:var(--silver);">Pesananmu sudah kami terima.</p>
-  </div>
-</div>
+<?php $payType = 'shop'; include __DIR__ . '/includes/payment_modal.php'; ?>
 
 <script src="js/main.js"></script>
+<script src="js/payment.js?v=<?= filemtime(__DIR__ . '/js/payment.js') ?>"></script>
 </body>
 </html>

@@ -152,10 +152,11 @@ CREATE TABLE tickets (
   CONSTRAINT fk_tickets_order_id FOREIGN KEY (order_id) REFERENCES ticket_orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB COMMENT='Tiket individual dengan kode unik / barcode';
 
--- Pembayaran tiket (halaman: Tour)
+-- Pembayaran tiket konser DAN pesanan toko (halaman: Tour, Shop)
 CREATE TABLE payments (
   id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT 'ID pembayaran',
-  order_id INT UNSIGNED NOT NULL COMMENT 'Pesanan tiket yang dibayar',
+  order_type ENUM('ticket','shop') NOT NULL DEFAULT 'ticket' COMMENT 'Jenis pesanan: ticket (ticket_orders) / shop (orders)',
+  order_id INT UNSIGNED NOT NULL COMMENT 'ID pesanan di tabel sesuai order_type',
   method ENUM('va','qris','transfer') NOT NULL COMMENT 'Metode: Virtual Account / QRIS / Transfer manual',
   provider VARCHAR(20) NULL COMMENT 'Bank (BCA, BNI, BRI, MANDIRI) atau QRIS',
   pay_code VARCHAR(64) NULL COMMENT 'Nomor VA / nomor rekening tujuan / payload QRIS',
@@ -166,9 +167,9 @@ CREATE TABLE payments (
   paid_at DATETIME NULL COMMENT 'Waktu pembayaran diterima',
   reference VARCHAR(100) NULL COMMENT 'Referensi dari bank / payment gateway',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu dibuat',
-  CONSTRAINT fk_payments_order_id FOREIGN KEY (order_id) REFERENCES ticket_orders(id) ON DELETE CASCADE,
+  KEY idx_payments_order (order_type, order_id),
   KEY idx_payments_status (status, expires_at)
-) ENGINE=InnoDB COMMENT='Pembayaran pesanan tiket';
+) ENGINE=InnoDB COMMENT='Pembayaran pesanan tiket & toko';
 
 -- Riwayat kejadian pembayaran (dibuat, notifikasi masuk, lunas, kedaluwarsa)
 CREATE TABLE payment_logs (
@@ -223,7 +224,8 @@ CREATE TABLE orders (
   phone VARCHAR(20) NOT NULL COMMENT 'Nomor HP pembeli',
   shipping_address TEXT COMMENT 'Alamat kirim (kosong jika semua item digital)',
   total_price INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Total pesanan (Rp)',
-  status ENUM('pending','paid','shipped','cancelled') NOT NULL DEFAULT 'pending' COMMENT 'Status pesanan',
+  public_token CHAR(32) NULL COMMENT 'Token acak untuk cek status pesanan',
+  status ENUM('pending','paid','shipped','cancelled','expired') NOT NULL DEFAULT 'pending' COMMENT 'Status pesanan',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Waktu pemesanan'
 ) ENGINE=InnoDB COMMENT='Pesanan pembelian merch / album';
 

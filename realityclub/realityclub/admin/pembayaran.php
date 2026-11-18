@@ -38,11 +38,17 @@ if ($logged && isset($_POST['lunas'])) {
 
 if ($logged) {
     expire_stale($pdo);
-    $rows = $pdo->query("SELECT p.*, o.buyer_name, o.email, o.phone, o.quantity, o.status AS order_status,
-                                t.city, t.venue, t.show_date
+    $rows = $pdo->query("SELECT p.*,
+                                COALESCE(o.buyer_name, so.customer_name) AS buyer_name,
+                                COALESCE(o.email, so.email) AS email,
+                                COALESCE(o.phone, so.phone) AS phone,
+                                o.quantity, t.city, t.venue, t.show_date,
+                                so.shipping_address,
+                                (SELECT SUM(quantity) FROM order_items WHERE order_id = so.id) AS shop_qty
                            FROM payments p
-                           JOIN ticket_orders o ON o.id = p.order_id
-                           JOIN tours t ON t.id = o.tour_id
+                           LEFT JOIN ticket_orders o ON p.order_type = 'ticket' AND o.id = p.order_id
+                           LEFT JOIN tours t ON t.id = o.tour_id
+                           LEFT JOIN orders so ON p.order_type = 'shop' AND so.id = p.order_id
                           ORDER BY p.id DESC LIMIT 100")->fetchAll();
 }
 $labels = ['va' => 'Virtual Account', 'qris' => 'QRIS', 'transfer' => 'Transfer'];
@@ -80,17 +86,21 @@ $labels = ['va' => 'Virtual Account', 'qris' => 'QRIS', 'transfer' => 'Transfer'
     <button type="submit">Masuk</button>
   </form>
 <?php else: ?>
-  <h1>Pembayaran Tiket</h1>
+  <h1>Pembayaran Tiket &amp; Toko</h1>
   <p class="sub">100 pembayaran terbaru · <a href="pembayaran.php">Muat ulang</a> · <a href="?keluar=1">Keluar</a></p>
   <?php if ($flash): ?><div class="ok"><?= e($flash) ?></div><?php endif; ?>
   <div class="wrap">
   <table>
-    <tr><th>#</th><th>Pembeli</th><th>Konser</th><th>Metode</th><th>Nominal</th><th>Status</th><th>Batas bayar</th><th>Dibayar</th><th></th></tr>
+    <tr><th>#</th><th>Pembeli</th><th>Pesanan</th><th>Metode</th><th>Nominal</th><th>Status</th><th>Batas bayar</th><th>Dibayar</th><th></th></tr>
     <?php foreach ($rows as $r): ?>
     <tr>
-      <td><?= (int)$r['id'] ?><br><small>Pesanan <?= (int)$r['order_id'] ?></small></td>
+      <td><?= (int)$r['id'] ?><br><small><?= $r['order_type'] === 'shop' ? 'Toko ' : 'Tiket ' ?>#<?= (int)$r['order_id'] ?></small></td>
       <td><?= e($r['buyer_name']) ?><br><small><?= e($r['email']) ?> · <?= e($r['phone']) ?></small></td>
+      <?php if ($r['order_type'] === 'shop'): ?>
+      <td>Toko (merch / album)<br><small><?= (int)$r['shop_qty'] ?> barang<?= $r['shipping_address'] ? ' · ' . e($r['shipping_address']) : ' · digital' ?></small></td>
+      <?php else: ?>
       <td><?= e($r['city']) ?> — <?= e($r['venue']) ?><br><small><?= e(date('j M Y', strtotime($r['show_date']))) ?> · <?= (int)$r['quantity'] ?> tiket</small></td>
+      <?php endif; ?>
       <td><?= e($labels[$r['method']] ?? $r['method']) ?><br><small><?= e($r['provider']) ?></small></td>
       <td><?= e(rupiah((int)$r['amount'])) ?></td>
       <td><span class="st <?= e($r['status']) ?>"><?= e($r['status']) ?></span></td>

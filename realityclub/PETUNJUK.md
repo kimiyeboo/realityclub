@@ -41,3 +41,17 @@ File: `includes/payment_config.php` (pengaturan), `includes/payment.php` (fungsi
 Menandai LUNAS: (1) otomatis lewat webhook api/payment_callback.php dari bank/payment gateway, (2) manual lewat admin/pembayaran.php,
 (3) tombol "Simulasikan pembayaran" untuk demo (matikan dengan PAYMENT_SIMULATION=false sebelum website online).
 Ganti CALLBACK_SECRET, ADMIN_PASSWORD, rekening TRANSFER_ACCOUNT, dan kode VA_BANKS di payment_config.php.
+
+## Pembayaran Shop (baru)
+Alur: pilih barang -> klik ikon keranjang -> isi data pembeli -> "Lanjut ke Pembayaran" -> pilih QRIS / Virtual Account /
+Transfer Bank -> menunggu pembayaran -> pesanan lunas. Memakai jendela dan sistem pembayaran yang sama dengan tiket konser.
+
+Database lama: jalankan `database/update_pembayaran_shop.sql` SEKALI (setelah update_pembayaran.sql). Database baru: cukup import `realityclub_database.sql`.
+- `orders`: + kolom `public_token`, status `expired`.
+- `payments`: + kolom `order_type` ('ticket' / 'shop'); satu tabel pembayaran untuk keduanya.
+- Stok produk dikurangi saat pesanan dibuat dan DIKEMBALIKAN otomatis jika pesanan kedaluwarsa (`ORDER_HOLD_MINUTES` di payment_config.php).
+- `includes/payment_modal.php` : jendela pembayaran bersama (tour.php dan shop.php).
+- `admin/pembayaran.php` kini menampilkan pembayaran tiket dan toko.
+
+PENTING: pembayaran masih MODE DEMO (PAYMENT_SIMULATION = true). QR dan nomor VA belum bisa menerima uang sungguhan.
+Untuk uang asli, sambungkan ke payment gateway (Midtrans / Xendit / dll) lewat `api/payment_callback.php`, lalu set PAYMENT_SIMULATION = false.

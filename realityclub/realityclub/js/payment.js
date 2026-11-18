@@ -7,7 +7,9 @@
 
   var $ = function (sel, root) { return (root || modal).querySelector(sel); };
   var pay = function (name) { return document.querySelector('[data-pay="' + name + '"]'); }; // toast & tombol lanjut ada di luar modal
-  var STORE = 'rc_pending_order';
+  var TYPE = modal.getAttribute('data-type') === 'shop' ? 'shop' : 'ticket';
+  var STORE = TYPE === 'shop' ? 'rc_pending_shop' : 'rc_pending_order';
+  var ENDPOINT = TYPE === 'shop' ? 'api/checkout.php' : 'api/pesan_tiket.php';
   var POLL_MS = 4000;
 
   var S = { order: null, config: null, payment: null, method: null, provider: null,
@@ -58,15 +60,19 @@
   }
   function clearSaved() { try { localStorage.removeItem(STORE); } catch (e) {} }
   function api(url, data) {
-    var opt = data ? { method: 'POST', body: new URLSearchParams(data) } : {};
-    return fetch(url, opt).then(function (r) { return r.json(); });
+    if (data) {
+      data.type = TYPE;
+      return fetch(url, { method: 'POST', body: new URLSearchParams(data) }).then(function (r) { return r.json(); });
+    }
+    url += (url.indexOf('?') > -1 ? '&' : '?') + 'type=' + TYPE;
+    return fetch(url).then(function (r) { return r.json(); });
   }
 
   /* ---------- 1. pilih metode ---------- */
   function renderChoose() {
     var o = S.order;
-    pay('tour').textContent = o.tour;
-    pay('qty-line').textContent = o.quantity + ' tiket × ' + rupiah(o.unit_price);
+    pay('tour').textContent = o.title || o.tour;
+    pay('qty-line').textContent = o.line || (o.quantity + ' tiket × ' + rupiah(o.unit_price));
     pay('total').textContent = rupiah(o.total);
     var tfb = pay('transfer-bank');
     if (tfb && S.config && S.config.transfer) tfb.textContent = 'Transfer manual ke rekening ' + S.config.transfer.bank;
@@ -128,7 +134,7 @@
     var note = pay('amount-note');
     if (p.method === 'transfer' && p.unique_code) {
       note.hidden = false;
-      note.textContent = 'Sudah termasuk kode unik ' + p.unique_code + ' (harga tiket ' + rupiah(p.base_amount) + '). Transfer persis sesuai nominal.';
+      note.textContent = 'Sudah termasuk kode unik ' + p.unique_code + ' (harga ' + rupiah(p.base_amount) + '). Transfer persis sesuai nominal.';
     } else { note.hidden = true; }
 
     if (p.method === 'va') {
@@ -201,13 +207,17 @@
   function onPaid(res) {
     stopAll(); clearSaved(); hideResume();
     var info = pay('done-info');
-    info.textContent = (res.tour || (S.order && S.order.tour) || '') + (res.paid_at ? ' · dibayar ' + res.paid_at : '');
+    info.textContent = (res.title || res.tour || (S.order && (S.order.title || S.order.tour)) || '') + (res.paid_at ? ' · dibayar ' + res.paid_at : '');
     var list = pay('tickets'); list.innerHTML = '';
     (res.tickets || []).forEach(function (code) {
       var d = document.createElement('div'); d.className = 'pay-ticket'; d.textContent = code; list.appendChild(d);
     });
+    (res.items || []).forEach(function (line) {
+      var d = document.createElement('div'); d.className = 'pay-item'; d.textContent = line; list.appendChild(d);
+    });
+    var note = pay('done-note'); if (note && res.done_note) note.textContent = res.done_note;
     showView('done'); openModal();
-    toast('✓ Pembayaran diterima! Tiketmu sudah terbit.');
+    toast(res.toast || '✓ Pembayaran diterima!');
     S.order = null; S.payment = null;
   }
   function onExpired() {
@@ -266,7 +276,7 @@
   /* ---------- pesanan baru dari form ---------- */
   document.addEventListener('form:success', function (ev) {
     var f = ev.target;
-    if (!f || !f.matches || !f.matches('form[data-endpoint="api/pesan_tiket.php"]')) return;
+    if (!f || !f.matches || !f.matches('form[data-endpoint="' + ENDPOINT + '"]')) return;
     var r = ev.detail || {};
     if (!r.order) return;
     stopAll();
@@ -282,7 +292,7 @@
       .then(function (res) {
         if (!res.ok || res.order_status !== 'pending') { clearSaved(); return; }
         S.config = saved.config || {};
-        S.order = { id: saved.id, token: saved.token, quantity: res.order.quantity, unit_price: res.order.unit_price, total: res.order.total, tour: res.order.tour };
+        S.order = { id: saved.id, token: saved.token, quantity: res.order.quantity, unit_price: res.order.unit_price, total: res.order.total, tour: res.order.tour, title: res.order.title, line: res.order.line };
         S.offset = (res.server_time || 0) - Math.floor(Date.now() / 1000);
         renderChoose();
         if (res.payment && res.payment.status === 'pending') { S.payment = res.payment; startPolling(); }
